@@ -27,6 +27,7 @@ async function main() {
   }
 
   const inputPaths = normalizeInputPaths(args.paths);
+  const excludedPaths = normalizeInputPaths(args.exclude);
 
   if (inputPaths.length === 0) {
     console.error('No valid scan paths were provided.');
@@ -43,6 +44,12 @@ async function main() {
   logger.info(`Scan paths: ${inputPaths.join(', ')}`);
   logger.info(`Output folder: ${outputPath}`);
   logger.info(`Dry run: ${args.dryRun ? 'enabled' : 'disabled'}`);
+  logger.info(`ZIP mode: ${args.zipMode}`);
+  logger.info(
+    `Excluded paths: ${
+      excludedPaths.length > 0 ? excludedPaths.join(', ') : '(none)'
+    }`
+  );
 
   const validScanPaths = [];
   for (const scanPath of inputPaths) {
@@ -66,6 +73,7 @@ async function main() {
   }
 
   const scanResult = await scanDirectories(validScanPaths, {
+    excludedPaths,
     logger,
     onProgress: (stats) => {
       process.stdout.write(`\rScanned files: ${stats.filesScanned}`);
@@ -82,6 +90,7 @@ async function main() {
   const duplicateResult = await findDuplicateGroups(scanResult.files, {
     logger,
     concurrency: args.concurrency,
+    zipMode: args.zipMode,
     onHashProgress: (stats) => {
       process.stdout.write(
         `\rHashing candidates: ${stats.hashedFiles}/${stats.totalHashCandidates}`
@@ -116,13 +125,15 @@ function printHelp(errorMessage) {
   }
 
   console.log(`Usage:
-  node app.js --paths "D:\\,E:\\" --output "D:\\DUPLICATES" [--dry-run] [--concurrency 4]
+  node app.js --paths "D:\\,E:\\" --output "D:\\DUPLICATES" [--dry-run] [--concurrency 4] [--zip-mode file|contents] [--exclude "D:\\OLD_DUPLICATES"]
 
 Arguments:
   --paths         Comma-separated directories to scan
   --output        Destination folder for moved duplicates
   --dry-run       Preview actions without moving files
   --concurrency   Max concurrent hashing streams (default: 4)
+  --zip-mode      ZIP duplicate strategy: "file" or "contents" (default: file)
+  --exclude       Comma-separated folders to skip during scanning
   --help          Show this help message
 `);
 }

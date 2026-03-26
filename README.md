@@ -75,6 +75,15 @@ node app.js --paths "D:\,E:\" --output "D:\DUPLICATES"
   Maximum number of concurrent hashing streams
   Default: `4`
 
+- `--zip-mode`
+  ZIP duplicate strategy:
+  - `file` = compare ZIP files by the ZIP file bytes
+  - `contents` = inspect ZIP archive contents and compare entries inside the archive
+  Default: `file`
+
+- `--exclude`
+  Comma-separated folders to skip during scanning
+
 - `--help`
   Show usage help
 
@@ -122,6 +131,18 @@ node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run
 node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --concurrency 2
 ```
 
+### 8. Compare ZIP Files by Archive Contents
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --zip-mode contents
+```
+
+### 9. Exclude Specific Folders
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --exclude "D:\OLD_DUPLICATES,E:\Archive\DoNotScan"
+```
+
 ## How Duplicate Detection Works
 
 The tool uses a memory-safe workflow:
@@ -152,6 +173,21 @@ Destination categories:
 - Others: everything else
 
 ### ZIP Files
+
+The tool supports two ZIP comparison modes.
+
+Default mode:
+
+- `--zip-mode file`
+- compares ZIP files as normal files
+- two ZIPs match only when the archive bytes are identical
+
+Content-aware mode:
+
+- `--zip-mode contents`
+- reads ZIP central directory metadata without extracting files permanently
+- compares archive entries by internal path, uncompressed size, and CRC32
+- can detect duplicate ZIP archives even when the `.zip` files themselves differ byte-for-byte
 
 For duplicate `.zip` groups:
 
@@ -185,6 +221,9 @@ D:\DUPLICATES
   - `photo (2).jpg`
 - Cross-drive moves are handled safely
 - Permission failures are skipped and logged
+- The current output folder is skipped during scanning
+- Folders named like `DUPLICATES`, `DUPLICATES_OLD`, or `DUPLICATES-2026` are skipped automatically to make reruns safer
+- You can add your own skip list with `--exclude`
 
 ## Logs
 
@@ -210,11 +249,24 @@ Start with a dry run first:
 node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run
 ```
 
+If you want ZIP archives compared by what is inside them instead of by raw ZIP file bytes, use:
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run --zip-mode contents
+```
+
 Review the console output and log file, then run without `--dry-run` when you are confident in the results.
+
+For repeated scans, you can also protect prior result folders explicitly:
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run --exclude "D:\OLD_DUPLICATES,E:\PREVIOUS_RESULTS"
+```
 
 ## Notes
 
 - The tool currently uses MD5 because it is fast and suitable for duplicate matching workflows
+- In `--zip-mode contents`, standard ZIP central directory metadata is used; unsupported ZIP64 archives fall back to normal file hashing
 - The output folder should not be inside a heavily scanned location unless that is intentional
 - Very large scans can take time depending on drive speed, file count, and hash concurrency
 
@@ -238,5 +290,5 @@ node app.js --paths "D:\,G:\" --output "D:\DUPLICATES"
 node app.js --paths "E:\Backup\Pictures,E:\Backup\Documents,F:\Archive" --output "E:\DUPLICATES"
 ```
 
-work for me
+work for me on powershell
 node app.js --paths "D:\" --output "D:\DUPLICATES"

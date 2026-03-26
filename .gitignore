@@ -4,6 +4,8 @@
 # Local sample/test data created during development
 sample-data/
 collision-data/
+zip-mode-data/
+exclude-test/
 
 # Node.js
 node_modules/

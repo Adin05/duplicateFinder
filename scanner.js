@@ -41,9 +41,9 @@ async function scanDirectory(currentPath, outputPath, files, state, options) {
     }
 
     if (entry.isDirectory()) {
-      if (shouldSkipDirectory(entryPath)) {
+      if (shouldSkipDirectory(entryPath, options.excludedPaths || [], outputPath)) {
         state.skippedDirectories += 1;
-        options.logger.info(`Skipping system directory: ${entryPath}`);
+        options.logger.info(`Skipping excluded directory: ${entryPath}`);
         continue;
       }
 
