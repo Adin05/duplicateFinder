@@ -8,6 +8,7 @@ zip-mode-data/
 exclude-test/
 empty-dir-test/
 empty-only-test/
+zip-vs-file-test/
 
 # Optional report outputs
 scan-report*.json

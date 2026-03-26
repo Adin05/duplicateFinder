@@ -26,23 +26,35 @@ async function moveDuplicateGroups(groups, options) {
   for (const group of groups) {
     result.duplicateFiles += group.length;
 
-    const isZipGroup = group.every((file) => file.ext === '.zip');
-    const filesToMove = isZipGroup ? group : group.slice(1);
-    const zipGroupFolderName = isZipGroup
+    const zipFiles = group.filter((file) => file.ext === '.zip');
+    const normalFiles = group.filter((file) => file.ext !== '.zip');
+    const hasZipFiles = zipFiles.length > 0;
+    const hasOnlyZipFiles = hasZipFiles && normalFiles.length === 0;
+    const zipGroupFolderName = hasZipFiles
       ? `group-${String(zipGroupIndex + 1).padStart(3, '0')}`
       : null;
 
-    if (isZipGroup) {
+    if (hasZipFiles) {
       zipGroupIndex += 1;
-      options.logger.info(`ZIP duplicate group destination: ${path.join(options.outputPath, 'zip', zipGroupFolderName)}`);
+      options.logger.info(
+        `ZIP duplicate group destination: ${path.join(options.outputPath, 'zip', zipGroupFolderName)}`
+      );
     }
 
-    if (!isZipGroup) {
-      options.logger.info(`Keeping original: ${group[0].path}`);
+    if (normalFiles.length > 0) {
+      options.logger.info(`Keeping original: ${normalFiles[0].path}`);
+    }
+
+    const filesToMove = [];
+    if (hasOnlyZipFiles) {
+      filesToMove.push(...zipFiles);
+    } else {
+      filesToMove.push(...normalFiles.slice(1));
+      filesToMove.push(...zipFiles);
     }
 
     for (const file of filesToMove) {
-      const destinationDir = isZipGroup
+      const destinationDir = file.ext === '.zip'
         ? path.join(options.outputPath, 'zip', zipGroupFolderName)
         : path.join(options.outputPath, categorizeExtension(file.ext));
       const destinationPath = await getUniqueDestinationPath(destinationDir, file.name);

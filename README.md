@@ -219,6 +219,9 @@ Content-aware mode:
 - reads ZIP central directory metadata without extracting files permanently
 - compares archive entries by internal path, uncompressed size, and CRC32
 - can detect duplicate ZIP archives even when the `.zip` files themselves differ byte-for-byte
+- groups ZIP files together when they share duplicate internal files (same filename + size + CRC32)
+- compares files inside ZIP archives with unzipped files on disk when filename, size, and CRC32 match
+- logs warnings when a ZIP contains duplicate internal entry names
 
 For duplicate `.zip` groups:
 

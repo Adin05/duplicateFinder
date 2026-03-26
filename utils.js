@@ -15,6 +15,7 @@ const SKIP_DIRECTORY_NAMES = new Set([
   'system volume information',
 ]);
 const DUPLICATE_OUTPUT_DIR_PATTERN = /^duplicates(?:[_ -].+)?$/i;
+const CRC32_TABLE = createCrc32Table();
 
 function parseArgs(argv) {
   const args = {
@@ -150,7 +151,23 @@ function hashFile(filePath) {
   });
 }
 
-async function getZipContentSignature(filePath) {
+function getFileCrc32(filePath) {
+  return new Promise((resolve, reject) => {
+    let crc = 0xffffffff;
+    const stream = fs.createReadStream(filePath);
+
+    stream.on('error', reject);
+    stream.on('data', (chunk) => {
+      crc = updateCrc32(crc, chunk);
+    });
+    stream.on('end', () => {
+      const normalized = (crc ^ 0xffffffff) >>> 0;
+      resolve(normalized.toString(16).padStart(8, '0'));
+    });
+  });
+}
+
+async function getZipContentAnalysis(filePath) {
   const fileHandle = await fsp.open(filePath, 'r');
 
   try {
@@ -179,6 +196,10 @@ async function getZipContentSignature(filePath) {
     await fileHandle.read(directoryBuffer, 0, centralDirectorySize, centralDirectoryOffset);
 
     const entries = [];
+    const entryKeys = [];
+    const entryBaseSizeKeys = [];
+    const entryNameCounts = new Map();
+    const baseNameCounts = new Map();
     let offset = 0;
 
     while (offset < directoryBuffer.length) {
@@ -214,6 +235,7 @@ async function getZipContentSignature(filePath) {
       const extraBuffer = directoryBuffer.subarray(extraStart, extraEnd);
       const encoding = (flags & 0x0800) !== 0 ? 'utf8' : 'latin1';
       const entryName = nameBuffer.toString(encoding).replace(/\\/g, '/');
+      const baseName = path.posix.basename(entryName);
       const resolvedEntry = resolveZip64EntryValues(
         {
           compressedSize,
@@ -227,6 +249,16 @@ async function getZipContentSignature(filePath) {
         entries.push(
           `${entryName}|${resolvedEntry.uncompressedSize}|${crc32.toString(16).padStart(8, '0')}`
         );
+        entryKeys.push(
+          `${path.posix.basename(entryName).toLowerCase()}|${resolvedEntry.uncompressedSize}|${crc32
+            .toString(16)
+            .padStart(8, '0')}`
+        );
+        entryBaseSizeKeys.push(
+          `${path.posix.basename(entryName).toLowerCase()}|${resolvedEntry.uncompressedSize}`
+        );
+        entryNameCounts.set(entryName, (entryNameCounts.get(entryName) || 0) + 1);
+        baseNameCounts.set(baseName, (baseNameCounts.get(baseName) || 0) + 1);
       }
 
       offset = extraEnd + commentLength;
@@ -235,7 +267,14 @@ async function getZipContentSignature(filePath) {
     entries.sort();
 
     const manifest = entries.join('\n');
-    return `contents:${crypto.createHash('md5').update(manifest).digest('hex')}`;
+    return {
+      signature: `contents:${crypto.createHash('md5').update(manifest).digest('hex')}`,
+      duplicateBaseNames: collectDuplicateKeys(baseNameCounts),
+      duplicateEntryNames: collectDuplicateKeys(entryNameCounts),
+      entryBaseSizeKeys,
+      entryKeys,
+      entryCount: entries.length,
+    };
   } finally {
     await fileHandle.close();
   }
@@ -379,6 +418,43 @@ function readUInt64LEAsSafeNumber(buffer, offset) {
   return Number(value);
 }
 
+function collectDuplicateKeys(counterMap) {
+  const duplicates = [];
+
+  for (const [name, count] of counterMap.entries()) {
+    if (count > 1) {
+      duplicates.push(name);
+    }
+  }
+
+  duplicates.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
+  return duplicates;
+}
+
+function createCrc32Table() {
+  const table = new Uint32Array(256);
+
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value & 1) === 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+
+  return table;
+}
+
+function updateCrc32(crc, buffer) {
+  let next = crc >>> 0;
+
+  for (let index = 0; index < buffer.length; index += 1) {
+    next = CRC32_TABLE[(next ^ buffer[index]) & 0xff] ^ (next >>> 8);
+  }
+
+  return next >>> 0;
+}
+
 async function getUniqueDestinationPath(directoryPath, filename) {
   const parsed = path.parse(filename);
   let attempt = 0;
@@ -459,8 +535,9 @@ module.exports = {
   createLogger,
   ensureDirectory,
   formatBytes,
+  getFileCrc32,
+  getZipContentAnalysis,
   getUniqueDestinationPath,
-  getZipContentSignature,
   hashFile,
   isSamePath,
   moveFileSafely,

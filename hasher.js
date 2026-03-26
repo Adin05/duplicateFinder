@@ -1,4 +1,6 @@
-const { getZipContentSignature, hashFile } = require('./utils');
+const path = require('path');
+
+const { getFileCrc32, getZipContentAnalysis, hashFile } = require('./utils');
 
 async function findDuplicateGroups(files, options) {
   const zipMode = options.zipMode || 'file';
@@ -13,6 +15,10 @@ async function findDuplicateGroups(files, options) {
     }
   }
 
+  if (zipMode === 'contents') {
+    return findCombinedContentDuplicateGroups(nonZipFiles, zipFiles, options);
+  }
+
   const groups = [];
   let totalHashCandidates = 0;
   let potentialSavedBytes = 0;
@@ -22,10 +28,7 @@ async function findDuplicateGroups(files, options) {
   totalHashCandidates += standardResult.totalHashCandidates;
   potentialSavedBytes += standardResult.potentialSavedBytes;
 
-  const zipResult =
-    zipMode === 'contents'
-      ? await findZipContentDuplicateGroups(zipFiles, options)
-      : await findStandardDuplicateGroups(zipFiles, options);
+  const zipResult = await findStandardDuplicateGroups(zipFiles, options);
 
   groups.push(...zipResult.groups);
   totalHashCandidates += zipResult.totalHashCandidates;
@@ -123,15 +126,19 @@ async function findZipContentDuplicateGroups(files, options) {
     options.concurrency || 4,
     async (file) => {
       try {
-        const signature = await getZipContentSignature(file.path);
+        const zipContent = await getZipContentAnalysis(file.path);
         hashedFiles += 1;
         if (options.onHashProgress) {
           options.onHashProgress({ hashedFiles, totalHashCandidates });
         }
 
+        logZipInternalNameDuplicates(file.path, zipContent, options.logger);
+
         return {
           ...file,
-          zipSignature: signature,
+          zipEntryBaseSizeKeys: zipContent.entryBaseSizeKeys,
+          zipEntryKeys: zipContent.entryKeys,
+          zipSignature: zipContent.signature,
         };
       } catch (error) {
         options.logger.warn(
@@ -159,22 +166,82 @@ async function findZipContentDuplicateGroups(files, options) {
     }
   );
 
-  const bySignature = new Map();
-  for (const file of signatureEntries) {
-    if (!file) {
+  const validEntries = signatureEntries.filter(Boolean);
+  const groups = buildZipDuplicateGroups(validEntries);
+  let potentialSavedBytes = 0;
+
+  for (const group of groups) {
+    group.sort((left, right) => left.discoveryIndex - right.discoveryIndex);
+    potentialSavedBytes += calculatePotentialSavedBytes(group);
+  }
+
+  return {
+    entries: validEntries,
+    groups,
+    totalHashCandidates,
+    potentialSavedBytes,
+  };
+}
+
+async function findCombinedContentDuplicateGroups(nonZipFiles, zipFiles, options) {
+  const standardResult = await findStandardDuplicateGroups(nonZipFiles, options);
+  const zipResult = await findZipContentDuplicateGroups(zipFiles, options);
+  const regularFileMatches = await findRegularFilesMatchingZipEntries(
+    nonZipFiles,
+    zipResult.entries,
+    options
+  );
+
+  const allFiles = [...nonZipFiles, ...zipResult.entries];
+  const parents = allFiles.map((_, index) => index);
+  const indexByPath = new Map(allFiles.map((file, index) => [file.path, index]));
+
+  for (const group of standardResult.groups) {
+    unionFileGroup(group, indexByPath, parents);
+  }
+
+  for (const group of zipResult.groups) {
+    unionFileGroup(group, indexByPath, parents);
+  }
+
+  const zipIndexesByEntryKey = new Map();
+  for (const zipFile of zipResult.entries) {
+    const fileIndex = indexByPath.get(zipFile.path);
+    for (const entryKey of zipFile.zipEntryKeys || []) {
+      if (!zipIndexesByEntryKey.has(entryKey)) {
+        zipIndexesByEntryKey.set(entryKey, []);
+      }
+      zipIndexesByEntryKey.get(entryKey).push(fileIndex);
+    }
+  }
+
+  for (const regularFile of regularFileMatches.entries) {
+    const regularIndex = indexByPath.get(regularFile.path);
+    const matchingZipIndexes = zipIndexesByEntryKey.get(regularFile.zipEntryKey) || [];
+    if (matchingZipIndexes.length === 0) {
       continue;
     }
 
-    if (!bySignature.has(file.zipSignature)) {
-      bySignature.set(file.zipSignature, []);
+    for (const zipIndex of matchingZipIndexes) {
+      unionRoots(regularIndex, zipIndex, parents);
     }
-    bySignature.get(file.zipSignature).push(file);
+
+    logZipVsRegularMatch(regularFile, matchingZipIndexes, allFiles, options.logger);
+  }
+
+  const groupsByRoot = new Map();
+  for (let index = 0; index < allFiles.length; index += 1) {
+    const root = findRoot(index, parents);
+    if (!groupsByRoot.has(root)) {
+      groupsByRoot.set(root, []);
+    }
+    groupsByRoot.get(root).push(allFiles[index]);
   }
 
   const groups = [];
   let potentialSavedBytes = 0;
 
-  for (const group of bySignature.values()) {
+  for (const group of groupsByRoot.values()) {
     if (group.length <= 1) {
       continue;
     }
@@ -184,9 +251,11 @@ async function findZipContentDuplicateGroups(files, options) {
     potentialSavedBytes += calculatePotentialSavedBytes(group);
   }
 
+  groups.sort((left, right) => left[0].discoveryIndex - right[0].discoveryIndex);
+
   return {
     groups,
-    totalHashCandidates,
+    totalHashCandidates: standardResult.totalHashCandidates + zipResult.totalHashCandidates + regularFileMatches.totalHashCandidates,
     potentialSavedBytes,
   };
 }
@@ -219,7 +288,196 @@ async function runWithConcurrency(items, concurrency, worker) {
 }
 
 function calculatePotentialSavedBytes(group) {
-  return group.slice(1).reduce((total, file) => total + file.size, 0);
+  const nonZipFiles = group.filter((file) => file.ext !== '.zip');
+  const zipFiles = group.filter((file) => file.ext === '.zip');
+  let total = 0;
+
+  if (nonZipFiles.length > 0) {
+    total += nonZipFiles
+      .slice(1)
+      .reduce((sum, file) => sum + file.size, 0);
+  } else if (zipFiles.length > 0) {
+    total += zipFiles
+      .slice(1)
+      .reduce((sum, file) => sum + file.size, 0);
+  }
+
+  return total;
+}
+
+function buildZipDuplicateGroups(entries) {
+  if (entries.length <= 1) {
+    return [];
+  }
+
+  const indexBySignature = new Map();
+  const indexByEntryKey = new Map();
+  const parents = entries.map((_, index) => index);
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const file = entries[index];
+
+    if (!indexBySignature.has(file.zipSignature)) {
+      indexBySignature.set(file.zipSignature, []);
+    }
+    indexBySignature.get(file.zipSignature).push(index);
+
+    for (const entryKey of file.zipEntryKeys || []) {
+      if (!indexByEntryKey.has(entryKey)) {
+        indexByEntryKey.set(entryKey, []);
+      }
+      indexByEntryKey.get(entryKey).push(index);
+    }
+  }
+
+  for (const indexes of indexBySignature.values()) {
+    unionIndexes(indexes, parents);
+  }
+
+  for (const indexes of indexByEntryKey.values()) {
+    if (indexes.length > 1) {
+      unionIndexes(indexes, parents);
+    }
+  }
+
+  const groupsByRoot = new Map();
+  for (let index = 0; index < entries.length; index += 1) {
+    const root = findRoot(index, parents);
+    if (!groupsByRoot.has(root)) {
+      groupsByRoot.set(root, []);
+    }
+    groupsByRoot.get(root).push(entries[index]);
+  }
+
+  const groups = [];
+  for (const group of groupsByRoot.values()) {
+    if (group.length > 1) {
+      groups.push(group);
+    }
+  }
+
+  return groups;
+}
+
+function unionIndexes(indexes, parents) {
+  const [first, ...rest] = indexes;
+  for (const index of rest) {
+    unionRoots(first, index, parents);
+  }
+}
+
+function unionFileGroup(group, indexByPath, parents) {
+  const indexes = group
+    .map((file) => indexByPath.get(file.path))
+    .filter((index) => Number.isInteger(index));
+
+  if (indexes.length > 1) {
+    unionIndexes(indexes, parents);
+  }
+}
+
+function unionRoots(left, right, parents) {
+  const leftRoot = findRoot(left, parents);
+  const rightRoot = findRoot(right, parents);
+  if (leftRoot !== rightRoot) {
+    parents[rightRoot] = leftRoot;
+  }
+}
+
+function findRoot(index, parents) {
+  let cursor = index;
+  while (parents[cursor] !== cursor) {
+    parents[cursor] = parents[parents[cursor]];
+    cursor = parents[cursor];
+  }
+  return cursor;
+}
+
+function logZipInternalNameDuplicates(zipPath, zipContent, logger) {
+  if (zipContent.duplicateEntryNames.length > 0) {
+    logger.warn(
+      `ZIP contains duplicate internal entry paths: ${zipPath} (${formatListPreview(
+        zipContent.duplicateEntryNames
+      )})`
+    );
+  }
+
+  if (zipContent.duplicateBaseNames.length > 0) {
+    logger.warn(
+      `ZIP contains repeated file names in different folders: ${zipPath} (${formatListPreview(
+        zipContent.duplicateBaseNames
+      )})`
+    );
+  }
+}
+
+async function findRegularFilesMatchingZipEntries(nonZipFiles, zipEntries, options) {
+  const zipBaseSizeKeys = new Set();
+  for (const zipFile of zipEntries) {
+    for (const entryBaseSizeKey of zipFile.zipEntryBaseSizeKeys || []) {
+      zipBaseSizeKeys.add(entryBaseSizeKey);
+    }
+  }
+
+  const candidates = nonZipFiles.filter((file) =>
+    zipBaseSizeKeys.has(`${path.basename(file.path).toLowerCase()}|${file.size}`)
+  );
+
+  const totalHashCandidates = candidates.length;
+  let hashedFiles = 0;
+
+  const entries = await runWithConcurrency(
+    candidates,
+    options.concurrency || 4,
+    async (file) => {
+      try {
+        const crc32 = await getFileCrc32(file.path);
+        hashedFiles += 1;
+        if (options.onHashProgress) {
+          options.onHashProgress({
+            hashedFiles,
+            totalHashCandidates,
+          });
+        }
+
+        return {
+          ...file,
+          zipEntryKey: `${path.basename(file.path).toLowerCase()}|${file.size}|${crc32}`,
+        };
+      } catch (error) {
+        options.logger.warn(
+          `CRC32 analysis failed for ZIP comparison: ${file.path} (${error.code || error.message})`
+        );
+        return null;
+      }
+    }
+  );
+
+  return {
+    entries: entries.filter(Boolean),
+    totalHashCandidates,
+  };
+}
+
+function logZipVsRegularMatch(regularFile, matchingZipIndexes, allFiles, logger) {
+  const zipPaths = matchingZipIndexes
+    .map((index) => allFiles[index].path)
+    .slice(0, 3);
+  const suffix =
+    matchingZipIndexes.length > 3 ? ` ... +${matchingZipIndexes.length - 3} more` : '';
+
+  logger.info(
+    `ZIP contents match unzipped file: ${regularFile.path} <-> ${zipPaths.join(', ')}${suffix}`
+  );
+}
+
+function formatListPreview(items) {
+  const preview = items.slice(0, 5);
+  if (items.length <= 5) {
+    return preview.join(', ');
+  }
+
+  return `${preview.join(', ')} ... +${items.length - 5} more`;
 }
 
 module.exports = {
