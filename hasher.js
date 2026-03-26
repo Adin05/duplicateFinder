@@ -1,6 +1,12 @@
 const path = require('path');
 
-const { getFileCrc32, getZipContentAnalysis, hashFile } = require('./utils');
+const {
+  getFileCrc32,
+  getFileMd5,
+  getZipContentAnalysis,
+  getZipEntryMd5,
+  hashFile,
+} = require('./utils');
 
 async function findDuplicateGroups(files, options) {
   const zipMode = options.zipMode || 'file';
@@ -138,6 +144,7 @@ async function findZipContentDuplicateGroups(files, options) {
           ...file,
           zipEntryBaseSizeKeys: zipContent.entryBaseSizeKeys,
           zipEntryKeys: zipContent.entryKeys,
+          zipEntryRecords: zipContent.entryRecords,
           zipSignature: zipContent.signature,
         };
       } catch (error) {
@@ -215,12 +222,22 @@ async function findCombinedContentDuplicateGroups(nonZipFiles, zipFiles, options
     }
   }
 
+  const strongZipMatches = await buildStrongZipRegularMatches(
+    regularFileMatches.entries,
+    zipResult.entries,
+    options
+  );
+
   for (const regularFile of regularFileMatches.entries) {
     const regularIndex = indexByPath.get(regularFile.path);
-    const matchingZipIndexes = zipIndexesByEntryKey.get(regularFile.zipEntryKey) || [];
-    if (matchingZipIndexes.length === 0) {
+    const matchingZipPaths = strongZipMatches.get(regularFile.path) || [];
+    if (matchingZipPaths.length === 0) {
       continue;
     }
+
+    const matchingZipIndexes = matchingZipPaths
+      .map((zipPath) => indexByPath.get(zipPath))
+      .filter((zipIndex) => Number.isInteger(zipIndex));
 
     for (const zipIndex of matchingZipIndexes) {
       unionRoots(regularIndex, zipIndex, parents);
@@ -255,7 +272,11 @@ async function findCombinedContentDuplicateGroups(nonZipFiles, zipFiles, options
 
   return {
     groups,
-    totalHashCandidates: standardResult.totalHashCandidates + zipResult.totalHashCandidates + regularFileMatches.totalHashCandidates,
+    totalHashCandidates:
+      standardResult.totalHashCandidates +
+      zipResult.totalHashCandidates +
+      regularFileMatches.totalHashCandidates +
+      strongZipMatches.hashOperations,
     potentialSavedBytes,
   };
 }
@@ -456,6 +477,97 @@ async function findRegularFilesMatchingZipEntries(nonZipFiles, zipEntries, optio
   return {
     entries: entries.filter(Boolean),
     totalHashCandidates,
+  };
+}
+
+async function buildStrongZipRegularMatches(regularFiles, zipEntries, options) {
+  const matches = new Map();
+  const zipEntriesByKey = new Map();
+  const regularFileMd5Cache = new Map();
+  const zipEntryMd5Cache = new Map();
+  let hashOperations = 0;
+
+  for (const zipFile of zipEntries) {
+    for (const entryRecord of zipFile.zipEntryRecords || []) {
+      const entryKey = `${entryRecord.baseName}|${entryRecord.size}|${entryRecord.crc32}`;
+      if (!zipEntriesByKey.has(entryKey)) {
+        zipEntriesByKey.set(entryKey, []);
+      }
+      zipEntriesByKey.get(entryKey).push({
+        entryRecord,
+        zipPath: zipFile.path,
+      });
+    }
+  }
+
+  for (const regularFile of regularFiles) {
+    const candidateEntries = zipEntriesByKey.get(regularFile.zipEntryKey) || [];
+    if (candidateEntries.length === 0) {
+      continue;
+    }
+
+    const regularMd5 = await getCachedRegularMd5(regularFile, regularFileMd5Cache);
+    hashOperations += regularMd5.wasComputed ? 1 : 0;
+
+    for (const candidateEntry of candidateEntries) {
+      const zipMd5 = await getCachedZipEntryMd5(candidateEntry, zipEntryMd5Cache);
+      hashOperations += zipMd5.wasComputed ? 1 : 0;
+
+      if (regularMd5.value !== zipMd5.value) {
+        continue;
+      }
+
+      if (!matches.has(regularFile.path)) {
+        matches.set(regularFile.path, []);
+      }
+
+      const zipIndexes = matches.get(regularFile.path);
+      zipIndexes.push(candidateEntry.zipPath);
+      options.logger.info(
+        `Verified ZIP contents match file by MD5: ${regularFile.path} <-> ${candidateEntry.zipPath} (${candidateEntry.entryRecord.entryName})`
+      );
+    }
+  }
+
+  const resolvedMatches = new Map();
+  for (const [regularPath, zipPaths] of matches.entries()) {
+    resolvedMatches.set(regularPath, Array.from(new Set(zipPaths)));
+  }
+
+  resolvedMatches.hashOperations = hashOperations;
+  return resolvedMatches;
+}
+
+async function getCachedRegularMd5(file, cache) {
+  if (cache.has(file.path)) {
+    return {
+      value: cache.get(file.path),
+      wasComputed: false,
+    };
+  }
+
+  const value = await getFileMd5(file.path);
+  cache.set(file.path, value);
+  return {
+    value,
+    wasComputed: true,
+  };
+}
+
+async function getCachedZipEntryMd5(candidateEntry, cache) {
+  const cacheKey = `${candidateEntry.zipPath}::${candidateEntry.entryRecord.entryName}`;
+  if (cache.has(cacheKey)) {
+    return {
+      value: cache.get(cacheKey),
+      wasComputed: false,
+    };
+  }
+
+  const value = await getZipEntryMd5(candidateEntry.entryRecord);
+  cache.set(cacheKey, value);
+  return {
+    value,
+    wasComputed: true,
   };
 }
 

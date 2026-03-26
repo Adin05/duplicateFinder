@@ -7,12 +7,15 @@
   "scripts": {
     "cli": "node app.js",
     "dist": "electron-builder --win nsis",
+    "generate:icons": "node scripts/generate-icons.js",
     "pack": "electron-builder --dir",
     "start": "electron ."
   },
   "devDependencies": {
     "electron": "^36.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5"
   },
   "build": {
     "appId": "com.personalproject.duplicatefinder",
@@ -34,6 +37,7 @@
     ],
     "asar": true,
     "win": {
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {

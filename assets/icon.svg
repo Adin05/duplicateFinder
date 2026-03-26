@@ -1,0 +1,45 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="88" y1="72" x2="426" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E7A57"/>
+      <stop offset="1" stop-color="#10392B"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="152" y1="120" x2="364" y2="336" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5FFF8" stop-opacity="0.98"/>
+      <stop offset="1" stop-color="#DFF6E8" stop-opacity="0.82"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="220" y1="282" x2="350" y2="412" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7CF2B5"/>
+      <stop offset="1" stop-color="#D8FF9C"/>
+    </linearGradient>
+    <filter id="shadow" x="56" y="52" width="400" height="412" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="22"/>
+      <feGaussianBlur stdDeviation="18"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0313725 0 0 0 0 0.141176 0 0 0 0 0.101961 0 0 0 0.24 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="406" cy="106" r="88" fill="#67E9A6" fill-opacity="0.12"/>
+  <circle cx="110" cy="402" r="112" fill="#DFFFAB" fill-opacity="0.08"/>
+
+  <g filter="url(#shadow)">
+    <path d="M154 104H302L382 184V344C382 385.974 347.974 420 306 420H154C112.026 420 78 385.974 78 344V180C78 138.026 112.026 104 154 104Z" fill="url(#glass)"/>
+    <path d="M302 104L382 184H326C312.745 184 302 173.255 302 160V104Z" fill="#BFE9CC"/>
+    <path d="M154 104H302L382 184V344C382 385.974 347.974 420 306 420H154C112.026 420 78 385.974 78 344V180C78 138.026 112.026 104 154 104Z" stroke="white" stroke-opacity="0.2" stroke-width="4"/>
+  </g>
+
+  <rect x="126" y="178" width="116" height="18" rx="9" fill="#7BBF98" fill-opacity="0.75"/>
+  <rect x="126" y="222" width="162" height="18" rx="9" fill="#7BBF98" fill-opacity="0.6"/>
+  <rect x="126" y="266" width="132" height="18" rx="9" fill="#7BBF98" fill-opacity="0.5"/>
+
+  <circle cx="296" cy="284" r="72" fill="#163F30"/>
+  <circle cx="296" cy="284" r="52" fill="none" stroke="url(#accent)" stroke-width="20"/>
+  <path d="M344 332L396 384" stroke="url(#accent)" stroke-width="24" stroke-linecap="round"/>
+
+  <path d="M222 352L248.5 378.5L306 321" stroke="#7CF2B5" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

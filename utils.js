@@ -167,6 +167,10 @@ function getFileCrc32(filePath) {
   });
 }
 
+function getFileMd5(filePath) {
+  return hashFile(filePath);
+}
+
 async function getZipContentAnalysis(filePath) {
   const fileHandle = await fsp.open(filePath, 'r');
 
@@ -198,6 +202,7 @@ async function getZipContentAnalysis(filePath) {
     const entries = [];
     const entryKeys = [];
     const entryBaseSizeKeys = [];
+    const entryRecords = [];
     const entryNameCounts = new Map();
     const baseNameCounts = new Map();
     let offset = 0;
@@ -213,6 +218,7 @@ async function getZipContentAnalysis(filePath) {
       }
 
       const flags = directoryBuffer.readUInt16LE(offset + 8);
+      const compressionMethod = directoryBuffer.readUInt16LE(offset + 10);
       const crc32 = directoryBuffer.readUInt32LE(offset + 16);
       const compressedSize = directoryBuffer.readUInt32LE(offset + 20);
       const uncompressedSize = directoryBuffer.readUInt32LE(offset + 24);
@@ -259,6 +265,16 @@ async function getZipContentAnalysis(filePath) {
         );
         entryNameCounts.set(entryName, (entryNameCounts.get(entryName) || 0) + 1);
         baseNameCounts.set(baseName, (baseNameCounts.get(baseName) || 0) + 1);
+        entryRecords.push({
+          baseName: path.posix.basename(entryName).toLowerCase(),
+          compressedSize: resolvedEntry.compressedSize,
+          compressionMethod,
+          crc32: crc32.toString(16).padStart(8, '0'),
+          entryName,
+          localHeaderOffset: resolvedEntry.localHeaderOffset,
+          size: resolvedEntry.uncompressedSize,
+          zipPath: filePath,
+        });
       }
 
       offset = extraEnd + commentLength;
@@ -273,8 +289,28 @@ async function getZipContentAnalysis(filePath) {
       duplicateEntryNames: collectDuplicateKeys(entryNameCounts),
       entryBaseSizeKeys,
       entryKeys,
+      entryRecords,
       entryCount: entries.length,
     };
+  } finally {
+    await fileHandle.close();
+  }
+}
+
+async function getZipEntryMd5(entryRecord) {
+  const fileHandle = await fsp.open(entryRecord.zipPath, 'r');
+
+  try {
+    const localHeader = await readBuffer(fileHandle, 30, entryRecord.localHeaderOffset);
+    if (localHeader.readUInt32LE(0) !== 0x04034b50) {
+      throw new Error('Invalid local file header signature');
+    }
+
+    const fileNameLength = localHeader.readUInt16LE(26);
+    const extraFieldLength = localHeader.readUInt16LE(28);
+    const dataOffset = entryRecord.localHeaderOffset + 30 + fileNameLength + extraFieldLength;
+
+    return await hashZipEntryData(fileHandle, entryRecord, dataOffset);
   } finally {
     await fileHandle.close();
   }
@@ -403,6 +439,43 @@ async function readBuffer(fileHandle, size, position) {
   }
 
   return buffer;
+}
+
+async function hashZipEntryData(fileHandle, entryRecord, dataOffset) {
+  const hash = crypto.createHash('md5');
+  const end = dataOffset + entryRecord.compressedSize - 1;
+  const source = fs.createReadStream(entryRecord.zipPath, {
+    end,
+    start: dataOffset,
+  });
+
+  return new Promise((resolve, reject) => {
+    let stream = source;
+
+    source.on('error', reject);
+
+    if (entryRecord.compressionMethod === 8) {
+      const zlib = require('zlib');
+      const inflater = zlib.createInflateRaw();
+      inflater.on('error', reject);
+      stream = source.pipe(inflater);
+    } else if (entryRecord.compressionMethod !== 0) {
+      source.destroy();
+      reject(
+        new Error(`Unsupported ZIP compression method: ${entryRecord.compressionMethod}`)
+      );
+      return;
+    }
+
+    stream.on('data', (chunk) => {
+      hash.update(chunk);
+    });
+
+    stream.on('error', reject);
+    stream.on('end', () => {
+      resolve(hash.digest('hex'));
+    });
+  });
 }
 
 function readUInt64LEAsSafeNumber(buffer, offset) {
@@ -536,7 +609,9 @@ module.exports = {
   ensureDirectory,
   formatBytes,
   getFileCrc32,
+  getFileMd5,
   getZipContentAnalysis,
+  getZipEntryMd5,
   getUniqueDestinationPath,
   hashFile,
   isSamePath,

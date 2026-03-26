@@ -1,6 +1,7 @@
 const state = {
   excludePaths: [],
   isRunning: false,
+  outputPath: null,
   scanPaths: [],
   summary: {
     collectedDirectories: 0,
@@ -43,6 +44,7 @@ const elements = {
 bootstrap();
 
 function bootstrap() {
+  elements.outputPath.readOnly = true;
   renderPathList(elements.scanPaths, state.scanPaths, 'No scan paths selected yet.');
   renderPathList(elements.excludePaths, state.excludePaths, 'No excluded paths.');
   renderSummary();
@@ -51,7 +53,7 @@ function bootstrap() {
 
   elements.addScanPath.addEventListener('click', async () => {
     const selected = await window.duplicateFinderApi.pickDirectory();
-    if (selected && !state.scanPaths.includes(selected)) {
+    if (selected && !state.scanPaths.some((entry) => entry.token === selected.token)) {
       state.scanPaths.push(selected);
       renderPathList(elements.scanPaths, state.scanPaths, 'No scan paths selected yet.');
     }
@@ -59,7 +61,7 @@ function bootstrap() {
 
   elements.addExcludePath.addEventListener('click', async () => {
     const selected = await window.duplicateFinderApi.pickDirectory();
-    if (selected && !state.excludePaths.includes(selected)) {
+    if (selected && !state.excludePaths.some((entry) => entry.token === selected.token)) {
       state.excludePaths.push(selected);
       renderPathList(elements.excludePaths, state.excludePaths, 'No excluded paths.');
     }
@@ -68,7 +70,8 @@ function bootstrap() {
   elements.pickOutputPath.addEventListener('click', async () => {
     const selected = await window.duplicateFinderApi.pickDirectory();
     if (selected) {
-      elements.outputPath.value = selected;
+      state.outputPath = selected;
+      elements.outputPath.value = selected.path;
     }
   });
 
@@ -114,7 +117,7 @@ async function runScan() {
     return;
   }
 
-  if (!elements.outputPath.value.trim()) {
+  if (!state.outputPath) {
     appendLog('ERROR', 'Please choose an output folder.');
     return;
   }
@@ -129,9 +132,9 @@ async function runScan() {
       concurrency: elements.concurrency.value,
       dryRun: elements.dryRun.checked,
       emptyDirOnly: elements.emptyDirOnly.checked,
-      excludePaths: state.excludePaths,
-      outputPath: elements.outputPath.value.trim(),
-      scanPaths: state.scanPaths,
+      excludePathTokens: state.excludePaths.map((entry) => entry.token),
+      outputPathToken: state.outputPath.token,
+      scanPathTokens: state.scanPaths.map((entry) => entry.token),
       zipMode: elements.zipMode.value,
     });
 
@@ -184,7 +187,7 @@ function renderPathList(container, items, emptyText) {
     row.className = 'path-item';
 
     const code = document.createElement('code');
-    code.textContent = item;
+    code.textContent = item.path;
 
     const removeButton = document.createElement('button');
     removeButton.className = 'remove-button';
@@ -192,8 +195,8 @@ function renderPathList(container, items, emptyText) {
     removeButton.addEventListener('click', () => {
       const nextItems =
         container === elements.scanPaths
-          ? state.scanPaths.filter((entry) => entry !== item)
-          : state.excludePaths.filter((entry) => entry !== item);
+          ? state.scanPaths.filter((entry) => entry.token !== item.token)
+          : state.excludePaths.filter((entry) => entry.token !== item.token);
 
       if (container === elements.scanPaths) {
         state.scanPaths = nextItems;
