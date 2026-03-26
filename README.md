@@ -223,10 +223,11 @@ Content-aware mode:
 For duplicate `.zip` groups:
 
 - The tool does not extract ZIP files
-- All matching ZIP duplicates are moved into:
+- Each matching ZIP duplicate group is moved into its own folder under `OUTPUT/zip/`:
 
 ```text
-OUTPUT/zip/
+OUTPUT/zip/group-001/
+OUTPUT/zip/group-002/
 ```
 
 ## Output Folder Layout
@@ -241,6 +242,8 @@ D:\DUPLICATES
   others
   videos
   zip
+    group-001
+    group-002
   duplicate-finder.log
 ```
 
@@ -344,6 +347,7 @@ node app.js --paths "E:\Backup\Pictures,E:\Backup\Documents,F:\Archive" --output
 
 work for me on powershell
 node app.js --paths "D:\" --output "D:\DUPLICATES"
+
 node app.js --paths "D:\iCloud,D:\BU 03262026\ICloud" --output "D:\DUPLICATES_Icloud" --zip-mode contents
 
 node app.js --paths "D:\" --output "D:\DUPLICATES" --exclude "D:\iCloud\Library" --collect-empty-dirs

@@ -21,19 +21,30 @@ async function moveDuplicateGroups(groups, options) {
     await ensureDirectory(path.join(options.outputPath, category));
   }
 
+  let zipGroupIndex = 0;
+
   for (const group of groups) {
     result.duplicateFiles += group.length;
 
     const isZipGroup = group.every((file) => file.ext === '.zip');
     const filesToMove = isZipGroup ? group : group.slice(1);
+    const zipGroupFolderName = isZipGroup
+      ? `group-${String(zipGroupIndex + 1).padStart(3, '0')}`
+      : null;
+
+    if (isZipGroup) {
+      zipGroupIndex += 1;
+      options.logger.info(`ZIP duplicate group destination: ${path.join(options.outputPath, 'zip', zipGroupFolderName)}`);
+    }
 
     if (!isZipGroup) {
       options.logger.info(`Keeping original: ${group[0].path}`);
     }
 
     for (const file of filesToMove) {
-      const category = isZipGroup ? 'zip' : categorizeExtension(file.ext);
-      const destinationDir = path.join(options.outputPath, category);
+      const destinationDir = isZipGroup
+        ? path.join(options.outputPath, 'zip', zipGroupFolderName)
+        : path.join(options.outputPath, categorizeExtension(file.ext));
       const destinationPath = await getUniqueDestinationPath(destinationDir, file.name);
 
       if (options.dryRun) {
