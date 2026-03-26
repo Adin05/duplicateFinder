@@ -1,0 +1,13 @@
+{
+  "name": "duplicate-finder-studio",
+  "version": "1.0.0",
+  "description": "Windows duplicate finder CLI and Electron desktop app",
+  "main": "electron/main.js",
+  "scripts": {
+    "cli": "node app.js",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^36.0.0"
+  }
+}

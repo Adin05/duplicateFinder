@@ -20,3 +20,9 @@ node_modules/
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# Electron
+dist/
+out/
+release/
+

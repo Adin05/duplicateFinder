@@ -356,3 +356,45 @@ node app.js --paths "D:\iCloud,D:\BU 03262026\ICloud" --output "D:\DUPLICATES_Ic
 node app.js --paths "D:\" --output "D:\DUPLICATES" --exclude "D:\iCloud\Library" --collect-empty-dirs
 
 node app.js --paths "D:\" --output "D:\DUPLICATES" --empty-dir-only
+
+## Electron Desktop App
+
+This project now also includes an Electron desktop UI.
+
+Files added:
+
+```text
+/project
+  engine.js
+  package.json
+  /electron
+    main.js
+    preload.js
+  /renderer
+    index.html
+    renderer.js
+    styles.css
+```
+
+### Install Desktop Dependency
+
+```powershell
+npm install
+```
+
+### Run Electron UI
+
+```powershell
+npm start
+```
+
+### Desktop Workflow
+
+- Add one or more scan folders
+- Add optional excluded folders
+- Choose the output folder
+- Choose `ZIP Mode`
+- Enable `Dry Run` first if needed
+- Click `Start Scan`
+
+The desktop app uses the same duplicate engine as the CLI, so scan behavior stays consistent.

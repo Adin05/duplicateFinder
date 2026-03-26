@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Duplicate Finder Studio</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="hero-panel">
+        <div class="hero-glow"></div>
+        <p class="eyebrow">Desktop Workflow</p>
+        <h1>Duplicate Finder Studio</h1>
+        <p class="hero-copy">
+          Review scan targets, preview moves, compare ZIP contents, and organize duplicates
+          with a safer Windows-first desktop experience.
+        </p>
+
+        <div class="hero-metrics">
+          <div class="metric-card">
+            <span class="metric-label">Mode</span>
+            <strong id="metric-mode">Ready</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Progress</span>
+            <strong id="metric-progress">0</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Potential Saved</span>
+            <strong id="metric-saved">0 B</strong>
+          </div>
+        </div>
+
+        <div class="progress-card">
+          <div class="progress-copy">
+            <span id="progress-phase">Idle</span>
+            <span id="progress-detail">Waiting for configuration</span>
+          </div>
+          <div class="progress-track">
+            <div id="progress-bar" class="progress-bar"></div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="panel controls-panel">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Configuration</p>
+              <h2>Scan Setup</h2>
+            </div>
+            <button id="run-button" class="primary-button">Start Scan</button>
+          </div>
+
+          <div class="control-grid">
+            <div class="field-block">
+              <label>Scan Paths</label>
+              <div class="path-toolbar">
+                <button id="add-scan-path" class="secondary-button">Add Folder</button>
+                <button id="clear-scan-paths" class="ghost-button">Clear</button>
+              </div>
+              <div id="scan-paths" class="path-list"></div>
+            </div>
+
+            <div class="field-block">
+              <label>Excluded Paths</label>
+              <div class="path-toolbar">
+                <button id="add-exclude-path" class="secondary-button">Add Exclude</button>
+                <button id="clear-exclude-paths" class="ghost-button">Clear</button>
+              </div>
+              <div id="exclude-paths" class="path-list compact"></div>
+            </div>
+
+            <div class="field-block">
+              <label>Output Folder</label>
+              <div class="single-path-row">
+                <input id="output-path" type="text" placeholder="Choose output folder" />
+                <button id="pick-output-path" class="secondary-button">Browse</button>
+              </div>
+            </div>
+
+            <div class="options-grid">
+              <label class="option-card">
+                <span>ZIP Mode</span>
+                <select id="zip-mode">
+                  <option value="file">File Bytes</option>
+                  <option value="contents">Contents</option>
+                </select>
+              </label>
+
+              <label class="option-card">
+                <span>Hash Concurrency</span>
+                <input id="concurrency" type="number" min="1" value="4" />
+              </label>
+
+              <label class="toggle-card">
+                <input id="dry-run" type="checkbox" checked />
+                <div>
+                  <strong>Dry Run</strong>
+                  <span>Preview without moving files</span>
+                </div>
+              </label>
+
+              <label class="toggle-card">
+                <input id="collect-empty-dirs" type="checkbox" />
+                <div>
+                  <strong>Collect Empty Folders</strong>
+                  <span>Gather emptied directories after move</span>
+                </div>
+              </label>
+
+              <label class="toggle-card">
+                <input id="empty-dir-only" type="checkbox" />
+                <div>
+                  <strong>Empty Folder Only</strong>
+                  <span>Skip file scan and gather empty folders only</span>
+                </div>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="workspace-grid">
+          <section class="panel summary-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Results</p>
+                <h2>Summary</h2>
+              </div>
+            </div>
+            <div class="summary-grid">
+              <article class="summary-card">
+                <span>Files Scanned</span>
+                <strong id="summary-files">0</strong>
+              </article>
+              <article class="summary-card">
+                <span>Duplicate Groups</span>
+                <strong id="summary-groups">0</strong>
+              </article>
+              <article class="summary-card">
+                <span>Items Moved</span>
+                <strong id="summary-moved">0</strong>
+              </article>
+              <article class="summary-card">
+                <span>Empty Folders</span>
+                <strong id="summary-empty">0</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel log-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Activity</p>
+                <h2>Live Log</h2>
+              </div>
+              <button id="clear-log" class="ghost-button">Clear Log</button>
+            </div>
+            <div id="log-view" class="log-view"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+  </html>

@@ -1,17 +1,5 @@
-const fs = require('fs/promises');
-const path = require('path');
-
-const { scanDirectories } = require('./scanner');
-const { findDuplicateGroups } = require('./hasher');
-const { moveDuplicateGroups } = require('./mover');
-const { collectEmptyDirectories } = require('./collector');
-const {
-  createLogger,
-  ensureDirectory,
-  formatBytes,
-  normalizeInputPaths,
-  parseArgs,
-} = require('./utils');
+const { runDuplicateFinder } = require('./engine');
+const { formatBytes, parseArgs } = require('./utils');
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -27,131 +15,27 @@ async function main() {
     return;
   }
 
-  const inputPaths = normalizeInputPaths(args.paths);
-  const excludedPaths = normalizeInputPaths(args.exclude);
+  let sawScanProgress = false;
+  let sawHashProgress = false;
 
-  if (inputPaths.length === 0) {
-    console.error('No valid scan paths were provided.');
-    process.exitCode = 1;
-    return;
-  }
-
-  const outputPath = path.resolve(args.output);
-  await ensureDirectory(outputPath);
-
-  const logger = createLogger(outputPath, args.dryRun);
-
-  logger.info('Starting duplicate scan');
-  logger.info(`Scan paths: ${inputPaths.join(', ')}`);
-  logger.info(`Output folder: ${outputPath}`);
-  logger.info(`Dry run: ${args.dryRun ? 'enabled' : 'disabled'}`);
-  logger.info(`ZIP mode: ${args.zipMode}`);
-  logger.info(`Collect empty dirs: ${args.collectEmptyDirs ? 'enabled' : 'disabled'}`);
-  logger.info(`Empty-dir-only mode: ${args.emptyDirOnly ? 'enabled' : 'disabled'}`);
-  logger.info(
-    `Excluded paths: ${
-      excludedPaths.length > 0 ? excludedPaths.join(', ') : '(none)'
-    }`
-  );
-
-  const validScanPaths = [];
-  for (const scanPath of inputPaths) {
-    try {
-      const stat = await fs.stat(scanPath);
-      if (!stat.isDirectory()) {
-        logger.warn(`Skipping non-directory path: ${scanPath}`);
-        continue;
-      }
-
-      validScanPaths.push(scanPath);
-    } catch (error) {
-      logger.warn(`Skipping inaccessible path: ${scanPath} (${error.message})`);
-    }
-  }
-
-  if (validScanPaths.length === 0) {
-    logger.error('No readable directories were available to scan.');
-    process.exitCode = 1;
-    return;
-  }
-
-  if (args.emptyDirOnly) {
-    const emptyDirectoryResult = await collectEmptyDirectories(validScanPaths, {
-      dryRun: args.dryRun,
-      excludedPaths,
-      logger,
-      outputPath,
-      plannedMovedFiles: [],
-    });
-
-    printSummary({
-      totalFilesScanned: 0,
-      duplicateGroups: 0,
-      duplicateFiles: 0,
-      movedFiles: 0,
-      collectedDirectories: emptyDirectoryResult.collectedDirectories,
-      savedBytes: 0,
-      dryRun: args.dryRun,
-    });
-    return;
-  }
-
-  const scanResult = await scanDirectories(validScanPaths, {
-    excludedPaths,
-    logger,
-    onProgress: (stats) => {
-      process.stdout.write(`\rScanned files: ${stats.filesScanned}`);
-    },
-    outputPath,
-  });
-
-  process.stdout.write('\n');
-
-  logger.info(`Finished scanning ${scanResult.filesScanned} files.`);
-  logger.info(`Skipped directories: ${scanResult.skippedDirectories}`);
-  logger.info(`Skipped files: ${scanResult.skippedFiles}`);
-
-  const duplicateResult = await findDuplicateGroups(scanResult.files, {
-    logger,
-    concurrency: args.concurrency,
-    zipMode: args.zipMode,
+  const summary = await runDuplicateFinder(args, {
     onHashProgress: (stats) => {
+      sawHashProgress = true;
       process.stdout.write(
         `\rHashing candidates: ${stats.hashedFiles}/${stats.totalHashCandidates}`
       );
     },
+    onScanProgress: (stats) => {
+      sawScanProgress = true;
+      process.stdout.write(`\rScanned files: ${stats.filesScanned}`);
+    },
   });
 
-  if (duplicateResult.totalHashCandidates > 0) {
+  if (sawScanProgress || sawHashProgress) {
     process.stdout.write('\n');
   }
 
-  const moveResult = await moveDuplicateGroups(duplicateResult.groups, {
-    outputPath,
-    dryRun: args.dryRun,
-    logger,
-  });
-
-  let emptyDirectoryResult = { collectedDirectories: 0 };
-  if (args.collectEmptyDirs) {
-    emptyDirectoryResult = await collectEmptyDirectories(validScanPaths, {
-      dryRun: args.dryRun,
-      excludedPaths,
-      logger,
-      outputPath,
-      plannedMovedFiles: moveResult.movedSourcePaths,
-    });
-  }
-
-  printSummary({
-    totalFilesScanned: scanResult.filesScanned,
-    duplicateGroups: duplicateResult.groups.length,
-    duplicateFiles: moveResult.duplicateFiles,
-    movedFiles: moveResult.movedFiles,
-    collectedDirectories: emptyDirectoryResult.collectedDirectories,
-    savedBytes: duplicateResult.potentialSavedBytes,
-    dryRun: args.dryRun,
-  });
+  printSummary(summary);
 }
 
 function printHelp(errorMessage) {
