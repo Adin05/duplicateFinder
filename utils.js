@@ -165,15 +165,15 @@ async function getZipContentSignature(filePath) {
       throw new Error('End of central directory record not found');
     }
 
-    const centralDirectorySize = tailBuffer.readUInt32LE(eocdOffset + 12);
-    const centralDirectoryOffset = tailBuffer.readUInt32LE(eocdOffset + 16);
-
-    if (
-      centralDirectorySize === 0xffffffff ||
-      centralDirectoryOffset === 0xffffffff
-    ) {
-      throw new Error('ZIP64 archives are not supported for content mode');
-    }
+    const tailStartOffset = stat.size - tailLength;
+    const zipMeta = await resolveZipCentralDirectoryMeta(
+      fileHandle,
+      tailBuffer,
+      eocdOffset,
+      tailStartOffset
+    );
+    const centralDirectorySize = zipMeta.centralDirectorySize;
+    const centralDirectoryOffset = zipMeta.centralDirectoryOffset;
 
     const directoryBuffer = Buffer.alloc(centralDirectorySize);
     await fileHandle.read(directoryBuffer, 0, centralDirectorySize, centralDirectoryOffset);
@@ -198,31 +198,38 @@ async function getZipContentSignature(filePath) {
       const fileNameLength = directoryBuffer.readUInt16LE(offset + 28);
       const extraFieldLength = directoryBuffer.readUInt16LE(offset + 30);
       const commentLength = directoryBuffer.readUInt16LE(offset + 32);
-      const localHeaderOffset = directoryBuffer.readUInt32LE(offset + 42);
-
-      if (
-        compressedSize === 0xffffffff ||
-        uncompressedSize === 0xffffffff ||
-        localHeaderOffset === 0xffffffff
-      ) {
-        throw new Error('ZIP64 entries are not supported for content mode');
-      }
 
       const nameStart = offset + 46;
       const nameEnd = nameStart + fileNameLength;
       if (nameEnd > directoryBuffer.length) {
         throw new Error('ZIP filename data is truncated');
       }
-
-      const nameBuffer = directoryBuffer.subarray(nameStart, nameEnd);
-      const encoding = (flags & 0x0800) !== 0 ? 'utf8' : 'latin1';
-      const entryName = nameBuffer.toString(encoding).replace(/\\/g, '/');
-
-      if (!entryName.endsWith('/')) {
-        entries.push(`${entryName}|${uncompressedSize}|${crc32.toString(16).padStart(8, '0')}`);
+      const extraStart = nameEnd;
+      const extraEnd = extraStart + extraFieldLength;
+      if (extraEnd > directoryBuffer.length) {
+        throw new Error('ZIP extra field data is truncated');
       }
 
-      offset = nameEnd + extraFieldLength + commentLength;
+      const nameBuffer = directoryBuffer.subarray(nameStart, nameEnd);
+      const extraBuffer = directoryBuffer.subarray(extraStart, extraEnd);
+      const encoding = (flags & 0x0800) !== 0 ? 'utf8' : 'latin1';
+      const entryName = nameBuffer.toString(encoding).replace(/\\/g, '/');
+      const resolvedEntry = resolveZip64EntryValues(
+        {
+          compressedSize,
+          localHeaderOffset: directoryBuffer.readUInt32LE(offset + 42),
+          uncompressedSize,
+        },
+        extraBuffer
+      );
+
+      if (!entryName.endsWith('/')) {
+        entries.push(
+          `${entryName}|${resolvedEntry.uncompressedSize}|${crc32.toString(16).padStart(8, '0')}`
+        );
+      }
+
+      offset = extraEnd + commentLength;
     }
 
     entries.sort();
@@ -242,6 +249,134 @@ function findEndOfCentralDirectory(buffer) {
   }
 
   return -1;
+}
+
+async function resolveZipCentralDirectoryMeta(fileHandle, tailBuffer, eocdOffset, tailStartOffset) {
+  const standardSize = tailBuffer.readUInt32LE(eocdOffset + 12);
+  const standardOffset = tailBuffer.readUInt32LE(eocdOffset + 16);
+
+  if (standardSize !== 0xffffffff && standardOffset !== 0xffffffff) {
+    return {
+      centralDirectoryOffset: standardOffset,
+      centralDirectorySize: standardSize,
+    };
+  }
+
+  const locatorOffset = eocdOffset - 20;
+  if (locatorOffset < 0 || tailBuffer.readUInt32LE(locatorOffset) !== 0x07064b50) {
+    throw new Error('ZIP64 locator not found');
+  }
+
+  const zip64EocdAbsoluteOffset = readUInt64LEAsSafeNumber(tailBuffer, locatorOffset + 8);
+  const zip64Header = await readBuffer(fileHandle, 56, zip64EocdAbsoluteOffset);
+  if (zip64Header.readUInt32LE(0) !== 0x06064b50) {
+    throw new Error('Invalid ZIP64 end of central directory signature');
+  }
+
+  const zip64RecordSize = readUInt64LEAsSafeNumber(zip64Header, 4);
+  if (zip64RecordSize < 44) {
+    throw new Error('Invalid ZIP64 end of central directory size');
+  }
+
+  const centralDirectorySize = readUInt64LEAsSafeNumber(zip64Header, 40);
+  const centralDirectoryOffset = readUInt64LEAsSafeNumber(zip64Header, 48);
+
+  return {
+    centralDirectoryOffset,
+    centralDirectorySize,
+  };
+}
+
+function resolveZip64EntryValues(entry, extraBuffer) {
+  const needsZip64 =
+    entry.uncompressedSize === 0xffffffff ||
+    entry.compressedSize === 0xffffffff ||
+    entry.localHeaderOffset === 0xffffffff;
+
+  if (!needsZip64) {
+    return {
+      compressedSize: entry.compressedSize,
+      localHeaderOffset: entry.localHeaderOffset,
+      uncompressedSize: entry.uncompressedSize,
+    };
+  }
+
+  const zip64Field = findExtraField(extraBuffer, 0x0001);
+  if (!zip64Field) {
+    throw new Error('ZIP64 extra field missing for ZIP64 entry');
+  }
+
+  let cursor = 0;
+  const resolved = {
+    compressedSize: entry.compressedSize,
+    localHeaderOffset: entry.localHeaderOffset,
+    uncompressedSize: entry.uncompressedSize,
+  };
+
+  if (entry.uncompressedSize === 0xffffffff) {
+    resolved.uncompressedSize = readUInt64LEAsSafeNumber(zip64Field, cursor);
+    cursor += 8;
+  }
+
+  if (entry.compressedSize === 0xffffffff) {
+    resolved.compressedSize = readUInt64LEAsSafeNumber(zip64Field, cursor);
+    cursor += 8;
+  }
+
+  if (entry.localHeaderOffset === 0xffffffff) {
+    resolved.localHeaderOffset = readUInt64LEAsSafeNumber(zip64Field, cursor);
+  }
+
+  return resolved;
+}
+
+function findExtraField(extraBuffer, targetHeaderId) {
+  let offset = 0;
+
+  while (offset + 4 <= extraBuffer.length) {
+    const headerId = extraBuffer.readUInt16LE(offset);
+    const dataSize = extraBuffer.readUInt16LE(offset + 2);
+    const dataStart = offset + 4;
+    const dataEnd = dataStart + dataSize;
+    if (dataEnd > extraBuffer.length) {
+      break;
+    }
+
+    if (headerId === targetHeaderId) {
+      return extraBuffer.subarray(dataStart, dataEnd);
+    }
+
+    offset = dataEnd;
+  }
+
+  return null;
+}
+
+async function readBuffer(fileHandle, size, position) {
+  if (size > Number.MAX_SAFE_INTEGER || position > Number.MAX_SAFE_INTEGER) {
+    throw new Error('ZIP offset exceeds supported numeric range');
+  }
+
+  const buffer = Buffer.alloc(size);
+  const { bytesRead } = await fileHandle.read(buffer, 0, size, position);
+  if (bytesRead !== size) {
+    throw new Error('Unexpected end of ZIP file');
+  }
+
+  return buffer;
+}
+
+function readUInt64LEAsSafeNumber(buffer, offset) {
+  if (offset + 8 > buffer.length) {
+    throw new Error('ZIP64 field is truncated');
+  }
+
+  const value = buffer.readBigUInt64LE(offset);
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('ZIP64 value exceeds supported numeric range');
+  }
+
+  return Number(value);
 }
 
 async function getUniqueDestinationPath(directoryPath, filename) {

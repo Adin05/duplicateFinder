@@ -318,7 +318,7 @@ node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run --collect-empty
 ## Notes
 
 - The tool currently uses MD5 because it is fast and suitable for duplicate matching workflows
-- In `--zip-mode contents`, standard ZIP central directory metadata is used; unsupported ZIP64 archives fall back to normal file hashing
+- In `--zip-mode contents`, both standard ZIP and ZIP64 central directory metadata are supported
 - The output folder should not be inside a heavily scanned location unless that is intentional
 - Very large scans can take time depending on drive speed, file count, and hash concurrency
 
@@ -344,6 +344,7 @@ node app.js --paths "E:\Backup\Pictures,E:\Backup\Documents,F:\Archive" --output
 
 work for me on powershell
 node app.js --paths "D:\" --output "D:\DUPLICATES"
+node app.js --paths "D:\iCloud,D:\BU 03262026\ICloud" --output "D:\DUPLICATES_Icloud" --zip-mode contents
 
 node app.js --paths "D:\" --output "D:\DUPLICATES" --exclude "D:\iCloud\Library" --collect-empty-dirs
 
