@@ -19,6 +19,7 @@
   },
   "build": {
     "appId": "com.personalproject.duplicatefinder",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "productName": "Duplicate Finder Studio",
     "directories": {
       "output": "release"
@@ -38,7 +39,6 @@
     "asar": true,
     "win": {
       "icon": "build/icon.ico",
-      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
@@ -50,6 +50,9 @@
     },
     "nsis": {
       "allowToChangeInstallationDirectory": true,
+      "installerHeaderIcon": "build/icon.ico",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
       "oneClick": false,
       "perMachine": false
     }

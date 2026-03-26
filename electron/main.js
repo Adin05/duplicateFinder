@@ -1,7 +1,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron');
 
 const { runDuplicateFinder } = require('../engine');
 
@@ -9,16 +9,20 @@ let mainWindow = null;
 let isRunning = false;
 const approvedDirectoryTokens = new Map();
 const rendererUrl = pathToFileURL(path.join(__dirname, '../renderer/index.html')).toString();
-const windowIconPath = path.join(__dirname, '../build/icon.png');
+const iconPath = process.platform === 'win32'
+  ? path.join(__dirname, '../build/icon.ico')
+  : path.join(__dirname, '../build/icon.png');
 
 function createWindow() {
+  const appIcon = nativeImage.createFromPath(iconPath);
+
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 1100,
     minHeight: 760,
     backgroundColor: '#101d18',
-    icon: windowIconPath,
+    icon: appIcon.isEmpty() ? undefined : appIcon,
     title: 'Duplicate Finder Studio',
     webPreferences: {
       contextIsolation: true,
@@ -28,6 +32,10 @@ function createWindow() {
       webSecurity: true,
     },
   });
+
+  if (!appIcon.isEmpty()) {
+    mainWindow.setIcon(appIcon);
+  }
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event, url) => {
