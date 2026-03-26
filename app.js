@@ -4,6 +4,7 @@ const path = require('path');
 const { scanDirectories } = require('./scanner');
 const { findDuplicateGroups } = require('./hasher');
 const { moveDuplicateGroups } = require('./mover');
+const { collectEmptyDirectories } = require('./collector');
 const {
   createLogger,
   ensureDirectory,
@@ -45,6 +46,8 @@ async function main() {
   logger.info(`Output folder: ${outputPath}`);
   logger.info(`Dry run: ${args.dryRun ? 'enabled' : 'disabled'}`);
   logger.info(`ZIP mode: ${args.zipMode}`);
+  logger.info(`Collect empty dirs: ${args.collectEmptyDirs ? 'enabled' : 'disabled'}`);
+  logger.info(`Empty-dir-only mode: ${args.emptyDirOnly ? 'enabled' : 'disabled'}`);
   logger.info(
     `Excluded paths: ${
       excludedPaths.length > 0 ? excludedPaths.join(', ') : '(none)'
@@ -69,6 +72,27 @@ async function main() {
   if (validScanPaths.length === 0) {
     logger.error('No readable directories were available to scan.');
     process.exitCode = 1;
+    return;
+  }
+
+  if (args.emptyDirOnly) {
+    const emptyDirectoryResult = await collectEmptyDirectories(validScanPaths, {
+      dryRun: args.dryRun,
+      excludedPaths,
+      logger,
+      outputPath,
+      plannedMovedFiles: [],
+    });
+
+    printSummary({
+      totalFilesScanned: 0,
+      duplicateGroups: 0,
+      duplicateFiles: 0,
+      movedFiles: 0,
+      collectedDirectories: emptyDirectoryResult.collectedDirectories,
+      savedBytes: 0,
+      dryRun: args.dryRun,
+    });
     return;
   }
 
@@ -108,11 +132,23 @@ async function main() {
     logger,
   });
 
+  let emptyDirectoryResult = { collectedDirectories: 0 };
+  if (args.collectEmptyDirs) {
+    emptyDirectoryResult = await collectEmptyDirectories(validScanPaths, {
+      dryRun: args.dryRun,
+      excludedPaths,
+      logger,
+      outputPath,
+      plannedMovedFiles: moveResult.movedSourcePaths,
+    });
+  }
+
   printSummary({
     totalFilesScanned: scanResult.filesScanned,
     duplicateGroups: duplicateResult.groups.length,
     duplicateFiles: moveResult.duplicateFiles,
     movedFiles: moveResult.movedFiles,
+    collectedDirectories: emptyDirectoryResult.collectedDirectories,
     savedBytes: duplicateResult.potentialSavedBytes,
     dryRun: args.dryRun,
   });
@@ -125,7 +161,8 @@ function printHelp(errorMessage) {
   }
 
   console.log(`Usage:
-  node app.js --paths "D:\\,E:\\" --output "D:\\DUPLICATES" [--dry-run] [--concurrency 4] [--zip-mode file|contents] [--exclude "D:\\OLD_DUPLICATES"]
+  node app.js --paths "D:\\,E:\\" --output "D:\\DUPLICATES" [--dry-run] [--concurrency 4] [--zip-mode file|contents] [--exclude "D:\\OLD_DUPLICATES"] [--collect-empty-dirs]
+  node app.js --paths "D:\\,E:\\" --output "D:\\DUPLICATES" [--dry-run] --empty-dir-only
 
 Arguments:
   --paths         Comma-separated directories to scan
@@ -134,6 +171,10 @@ Arguments:
   --concurrency   Max concurrent hashing streams (default: 4)
   --zip-mode      ZIP duplicate strategy: "file" or "contents" (default: file)
   --exclude       Comma-separated folders to skip during scanning
+  --collect-empty-dirs
+                  Move empty folders into OUTPUT\\empty-folders after file moves
+  --empty-dir-only
+                  Only collect already-empty folders without scanning file duplicates
   --help          Show this help message
 `);
 }
@@ -146,6 +187,9 @@ function printSummary(summary) {
   console.log(`Duplicate files found: ${summary.duplicateFiles}`);
   console.log(
     `${summary.dryRun ? 'Files that would be moved' : 'Files moved'}: ${summary.movedFiles}`
+  );
+  console.log(
+    `${summary.dryRun ? 'Empty folders that would be collected' : 'Empty folders collected'}: ${summary.collectedDirectories}`
   );
   console.log(`Total size that could be saved: ${formatBytes(summary.savedBytes)}`);
 }

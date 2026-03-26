@@ -41,6 +41,7 @@ The tool is designed to be careful with real user data:
 ```text
 /project
   app.js
+  collector.js
   scanner.js
   hasher.js
   mover.js
@@ -83,6 +84,12 @@ node app.js --paths "D:\,E:\" --output "D:\DUPLICATES"
 
 - `--exclude`
   Comma-separated folders to skip during scanning
+
+- `--collect-empty-dirs`
+  After duplicate moves, collect empty directories into `OUTPUT\empty-folders`
+
+- `--empty-dir-only`
+  Collect already-empty folders only, without scanning files for duplicates
 
 - `--help`
   Show usage help
@@ -141,6 +148,30 @@ node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --zip-mode contents
 
 ```powershell
 node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --exclude "D:\OLD_DUPLICATES,E:\Archive\DoNotScan"
+```
+
+### 10. Collect Empty Folders After Moving Duplicates
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --collect-empty-dirs
+```
+
+### 11. Preview Empty Folder Collection Too
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run --collect-empty-dirs
+```
+
+### 12. Collect Empty Folders Only Without File Scanning
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --empty-dir-only
+```
+
+### 13. Preview Empty-Folder-Only Mode
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run --empty-dir-only
 ```
 
 ## How Duplicate Detection Works
@@ -205,11 +236,24 @@ Example:
 ```text
 D:\DUPLICATES
   documents
+  empty-folders
   images
   others
   videos
   zip
   duplicate-finder.log
+```
+
+When `--collect-empty-dirs` is enabled, empty folders are gathered under:
+
+```text
+OUTPUT\empty-folders\<source-root-label>\...
+```
+
+Example:
+
+```text
+D:\DUPLICATES\empty-folders\D\Photos\Old Album
 ```
 
 ## Safety Behavior
@@ -224,6 +268,8 @@ D:\DUPLICATES
 - The current output folder is skipped during scanning
 - Folders named like `DUPLICATES`, `DUPLICATES_OLD`, or `DUPLICATES-2026` are skipped automatically to make reruns safer
 - You can add your own skip list with `--exclude`
+- Empty folder collection is optional and never removes the scan root itself
+- `--empty-dir-only` skips duplicate-file scanning entirely and only gathers folders that are already empty
 
 ## Logs
 
@@ -263,6 +309,12 @@ For repeated scans, you can also protect prior result folders explicitly:
 node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run --exclude "D:\OLD_DUPLICATES,E:\PREVIOUS_RESULTS"
 ```
 
+If you also want to gather folders left empty after moving duplicates:
+
+```powershell
+node app.js --paths "D:\,E:\" --output "D:\DUPLICATES" --dry-run --collect-empty-dirs
+```
+
 ## Notes
 
 - The tool currently uses MD5 because it is fast and suitable for duplicate matching workflows
@@ -292,3 +344,7 @@ node app.js --paths "E:\Backup\Pictures,E:\Backup\Documents,F:\Archive" --output
 
 work for me on powershell
 node app.js --paths "D:\" --output "D:\DUPLICATES"
+
+node app.js --paths "D:\" --output "D:\DUPLICATES" --exclude "D:\iCloud\Library" --collect-empty-dirs
+
+node app.js --paths "D:\" --output "D:\DUPLICATES" --empty-dir-only

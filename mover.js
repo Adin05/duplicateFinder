@@ -13,6 +13,7 @@ async function moveDuplicateGroups(groups, options) {
   const result = {
     duplicateFiles: 0,
     movedFiles: 0,
+    movedSourcePaths: [],
   };
 
   const categoryDirs = ['images', 'videos', 'documents', 'others', 'zip'];
@@ -45,6 +46,7 @@ async function moveDuplicateGroups(groups, options) {
       }
 
       result.movedFiles += 1;
+      result.movedSourcePaths.push(file.path);
     }
   }
 

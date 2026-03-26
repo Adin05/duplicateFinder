@@ -6,6 +6,12 @@ sample-data/
 collision-data/
 zip-mode-data/
 exclude-test/
+empty-dir-test/
+empty-only-test/
+
+# Optional report outputs
+scan-report*.json
+*.duplicate-report.json
 
 # Node.js
 node_modules/

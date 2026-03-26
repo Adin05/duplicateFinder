@@ -21,6 +21,8 @@ function parseArgs(argv) {
     dryRun: false,
     concurrency: 4,
     help: false,
+    collectEmptyDirs: false,
+    emptyDirOnly: false,
     zipMode: 'file',
   };
 
@@ -29,6 +31,16 @@ function parseArgs(argv) {
 
     if (token === '--dry-run') {
       args.dryRun = true;
+      continue;
+    }
+
+    if (token === '--collect-empty-dirs') {
+      args.collectEmptyDirs = true;
+      continue;
+    }
+
+    if (token === '--empty-dir-only') {
+      args.emptyDirOnly = true;
       continue;
     }
 
@@ -315,6 +327,7 @@ module.exports = {
   getUniqueDestinationPath,
   getZipContentSignature,
   hashFile,
+  isSamePath,
   moveFileSafely,
   normalizeInputPaths,
   parseArgs,
