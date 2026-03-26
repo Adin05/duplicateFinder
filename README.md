@@ -388,6 +388,24 @@ npm install
 npm start
 ```
 
+### Build Windows `.exe`
+
+```powershell
+npm run dist
+```
+
+Build output will be written to:
+
+```text
+release/
+```
+
+If you only want the unpacked app folder for testing:
+
+```powershell
+npm run pack
+```
+
 ### Desktop Workflow
 
 - Add one or more scan folders

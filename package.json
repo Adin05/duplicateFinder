@@ -1,13 +1,53 @@
 {
   "name": "duplicate-finder-studio",
   "version": "1.0.0",
+  "author": "Personal Project",
   "description": "Windows duplicate finder CLI and Electron desktop app",
   "main": "electron/main.js",
   "scripts": {
     "cli": "node app.js",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --dir",
     "start": "electron ."
   },
   "devDependencies": {
-    "electron": "^36.0.0"
+    "electron": "^36.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.personalproject.duplicatefinder",
+    "productName": "Duplicate Finder Studio",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "app.js",
+      "collector.js",
+      "engine.js",
+      "hasher.js",
+      "mover.js",
+      "scanner.js",
+      "utils.js",
+      "electron/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "allowToChangeInstallationDirectory": true,
+      "oneClick": false,
+      "perMachine": false
+    }
   }
 }
